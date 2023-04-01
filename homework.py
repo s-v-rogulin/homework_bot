@@ -47,13 +47,13 @@ def check_tokens():
     """Проверяет доступность токенов."""
     if not PRACTICUM_TOKEN:
         logging.critical('Отсутствует токен платформы Яндекс.Практикум')
-        raise SystemExit('Потерян токен Яндекс.Практикум')
+        return False
     if not TELEGRAM_TOKEN:
         logging.critical('Отсутствует токен платформы Телеграм')
-        raise SystemExit('Потерян токен Телеграм')
+        return False
     if not TELEGRAM_CHAT_ID:
         logging.critical('Отсутствует ID пользователя')
-        raise SystemExit('Потерян айди пользователя телеграм')
+        return False
     return True
 
 
@@ -100,11 +100,10 @@ def check_response(response):
         raise TypeError(
             f'Ответ сервиса не является словарем. Ответ сервиса {response}.'
         )
-    homeworks = response.get('homeworks')
-    if not response.get('homeworks'):
+    if 'homeworks' not in response:
         raise KeyError('В полученном ответе отсутствует ключ `homeworks`.')
-
-    if not response.get('current_date'):
+    homeworks = response['homeworks']
+    if 'current_date' not in response:
         raise KeyError('В полученном ответе отсутствует ключ `current_date`.')
 
     if not isinstance(homeworks, list):
@@ -133,31 +132,32 @@ def parse_status(homework):
         raise StatusError('Получен некорректный статус работы.')
 
     verdict = HOMEWORK_VERDICTS[homework_status]
-    return (f'Изменился статус проверки работы "{homework_name}". {verdict}')
+    return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def main():
     """Основная логика работы бота."""
-    if check_tokens():
-        bot = telegram.Bot(token=TELEGRAM_TOKEN)
-        timestamp = int(time.time())
-
-        while True:
-            try:
-                response = get_api_answer(timestamp)
-                homeworks = check_response(response)
-                new_rep_homeworks = len(homeworks)
-                while new_rep_homeworks > 0:
-                    message = parse_status(homeworks[new_rep_homeworks - 1])
-                    send_message(bot, message)
-                    new_rep_homeworks -= 1
-                timestamp = int(time.time())
-                time.sleep(RETRY_PERIOD)
-
-            except Exception as error:
-                message = f'Сбой в работе программы: {error}'
+    if not check_tokens():
+        error_msg = 'Отсутствует токен переменной окружения'
+        logger.critical(error_msg)
+        raise SystemExit(error_msg)
+    bot = telegram.Bot(token=TELEGRAM_TOKEN)
+    timestamp = int(time.time())
+    while True:
+        try:
+            response = get_api_answer(timestamp)
+            homeworks = check_response(response)
+            new_rep_homeworks = len(homeworks)
+            while new_rep_homeworks > 0:
+                message = parse_status(homeworks[new_rep_homeworks - 1])
                 send_message(bot, message)
-                time.sleep(RETRY_PERIOD)
+                new_rep_homeworks -= 1
+            timestamp = int(time.time())
+        except Exception as error:
+            message = f'Сбой в работе программы: {error}'
+            send_message(bot, message)
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
